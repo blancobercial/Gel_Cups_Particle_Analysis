@@ -16,10 +16,10 @@ SCALE_PATH = IMG_NAME + '_Scale' + EXT
 
 # Read all images
 img = cv2.imread(IMG_PATH)
-img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 #scale = cv2.imread(SCALE_PATH, cv2.IMREAD_GRAYSCALE)
 scale = cv2.imread(SCALE_PATH)
-scale = cv2.cvtColor(scale, cv2.COLOR_BGR2RGB)
+#scale = cv2.cvtColor(scale, cv2.COLOR_BGR2RGB)
 
 
 
@@ -48,7 +48,7 @@ img_masks = mask_generator.generate(img)
 '''
 img_masks[i] = {
     'segmentation': bool np array with same shape as img an entry is True if that ppx is in the mask and False if it is not
-    'area': area of mask in ppxs (equivalent to summing over entire array (T is 1 and F is 0)),
+    'area': area of mask in pixels (equivalent to summing over entire array (T is 1 and F is 0)),
     'bbox': boundary box of the mask in (x, y, width, height) format,
     'predicted_iou': the model's own prediction for the quality of the mask,
     'point_coords': the sampled input point that generated this mask,
@@ -71,9 +71,12 @@ in_label = np.array([1])
 scale_mask, scores, logits = predictor.predict(
     point_coords=scale_center,
     point_labels=in_label,
-    multimask_output=False,
+    multimask_output=True,
 )
-scale_mask = np.squeeze(scale_mask) # takes the 1 dim off of scale_mask (scale_mask.shape: (1,x,y) --> (x,y))
+areas = np.sum(scale_mask, axis=(0,2))
+indx = np.argmin(areas)
+scale_mask = scale_mask[indx]
+scale_mask = np.squeeze(scale_mask) # scale_mask.shape: (1,x,y) --> (x,y)
 # scale_mask is a bool np array with same shape as img an entry is True if that ppx is in the mask and False if it is not
 
 
