@@ -14,6 +14,30 @@ SCALE_PATH = IMG_NAME + '_Scale' + EXT
 
 
 
+# Define helper functions
+def show_mask(mask, ax, random_color=False):
+    if random_color:
+        color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
+    else:
+        color = np.array([30/255, 144/255, 255/255, 0.6])
+    h, w = mask.shape[-2:]
+    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+    ax.imshow(mask_image)
+    
+def show_points(coords, labels, ax, marker_size=150):
+    pos_points = coords[labels==1]
+    neg_points = coords[labels==0]
+    ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='.', s=marker_size, edgecolor='white', linewidth=0.5)
+    #ax.scatter(neg_points[:, 0], neg_points[:, 1], color='red', marker='.', s=marker_size, edgecolor='white', linewidth=0.5)
+
+clicked_pt = (0, 0)
+def get_mouse_click(event, x, y, flags, params):
+    global clicked_pt
+    if event == cv2.EVENT_LBUTTONDOWN:
+        clicked_pt = x, y
+
+
+
 # Read all images
 img = cv2.imread(IMG_PATH)
 #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -62,14 +86,17 @@ img_masks[i] = {
 # Get mask that corresponds to center pixel in scale image
 predictor = SamPredictor(sam)
 predictor.set_image(scale)
-scale_center = np.array([[scale.shape[1] // 2, scale.shape[0] // 2]])
+cv2.imshow('Scale img', scale)
+cv2.setMouseCallback('Scale img', get_mouse_click)
+cv2.waitKey(0)
+clicked_pt = np.array([[*clicked_pt]])
 in_label = np.array([1])
 
 
 
 # Generate mask for scale
 scale_mask, scores, logits = predictor.predict(
-    point_coords=scale_center,
+    point_coords=clicked_pt,
     point_labels=in_label,
     multimask_output=True,
 )
@@ -78,6 +105,12 @@ indx = np.argmin(areas)
 scale_mask = scale_mask[indx]
 scale_mask = np.squeeze(scale_mask) # scale_mask.shape: (1,x,y) --> (x,y)
 # scale_mask is a bool np array with same shape as img an entry is True if that ppx is in the mask and False if it is not
+plt.figure()
+plt.imshow(scale)
+show_mask(scale_mask, plt.gca())
+show_points(clicked_pt, in_label, plt.gca())
+plt.axis('off')
+plt.show()
 
 
 
