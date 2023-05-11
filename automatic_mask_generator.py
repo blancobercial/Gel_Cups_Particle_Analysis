@@ -3,18 +3,33 @@ import torch
 import matplotlib.pyplot as plt
 import cv2
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+from streamlit_image_coordinates import streamlit_image_coordinates
+import streamlit as st
+from PIL import Image
 
 
 
-# Global variables
-IMG_NAME = 'Nov21_150B_L1_F1'
-EXT = '.tiff'
-IMG_PATH = IMG_NAME + EXT
-SCALE_PATH = IMG_NAME + '_Scale' + EXT
+# Define global constants
+MAX_WIDTH = 700
 
 
 
-# Define helper functions
+# Define helpful functions
+def show_anns(anns):
+    if len(anns) == 0:
+        return
+    sorted_anns = sorted(anns, key=(lambda x: x['area']), reverse=True)
+    ax = plt.gca()
+    ax.set_autoscale_on(False)
+
+    img = np.ones((sorted_anns[0]['segmentation'].shape[0], sorted_anns[0]['segmentation'].shape[1], 4))
+    img[:,:,3] = 0
+    for ann in sorted_anns:
+        m = ann['segmentation']
+        color_mask = np.concatenate([np.random.random(3), [0.35]])
+        img[m] = color_mask
+    ax.imshow(img)
+
 def show_mask(mask, ax, random_color=False):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
@@ -24,106 +39,109 @@ def show_mask(mask, ax, random_color=False):
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     ax.imshow(mask_image)
     
-def show_points(coords, labels, ax, marker_size=150):
+def show_points(coords, labels, ax, marker_size=20):
     pos_points = coords[labels==1]
-    neg_points = coords[labels==0]
-    ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='.', s=marker_size, edgecolor='white', linewidth=0.5)
-    #ax.scatter(neg_points[:, 0], neg_points[:, 1], color='red', marker='.', s=marker_size, edgecolor='white', linewidth=0.5)
+    ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='.', s=marker_size, edgecolor='white', linewidth=0.2)
 
-clicked_pt = (0, 0)
-def get_mouse_click(event, x, y, flags, params):
-    global clicked_pt
-    if event == cv2.EVENT_LBUTTONDOWN:
-        clicked_pt = x, y
-
-
-
-# Read all images
-img = cv2.imread(IMG_PATH)
-#img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-#scale = cv2.imread(SCALE_PATH, cv2.IMREAD_GRAYSCALE)
-scale = cv2.imread(SCALE_PATH)
-#scale = cv2.cvtColor(scale, cv2.COLOR_BGR2RGB)
 
 
 
 # Get SAM
 sam_checkpoint = 'sam_vit_h_4b8939.pth'
 model_type = 'vit_h'
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
+if torch.cuda.is_available():
+    device = 'cuda'
+else:
+    device = 'cpu'
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
 sam.to(device=device)
-
 mask_generator = SamAutomaticMaskGenerator(
     model=sam,
-    #points_per_side=32,
-    #pred_iou_thresh=0.86,
-    #stability_score_thresh=0.92,
-    #crop_n_layers=1,
-    #crop_n_points_downscale_factor=2,
-    min_mask_region_area=100,  # Requires open-cv to run post-processing
+    min_mask_region_area=200
 )
-
-
-
-# Generate masks for image
-img_masks = mask_generator.generate(img)
-'''
-img_masks[i] = {
-    'segmentation': bool np array with same shape as img an entry is True if that ppx is in the mask and False if it is not
-    'area': area of mask in pixels (equivalent to summing over entire array (T is 1 and F is 0)),
-    'bbox': boundary box of the mask in (x, y, width, height) format,
-    'predicted_iou': the model's own prediction for the quality of the mask,
-    'point_coords': the sampled input point that generated this mask,
-    'stability_score': an additional measure of mask quality,
-    'crop_box': the crop of the img used to generate this mask in (x, y, width, height) format
-}
-'''
-
-
-
-# Get mask that corresponds to center pixel in scale image
 predictor = SamPredictor(sam)
-predictor.set_image(scale)
-cv2.imshow('Scale img', scale)
-cv2.setMouseCallback('Scale img', get_mouse_click)
-cv2.waitKey(0)
-clicked_pt = np.array([[*clicked_pt]])
-in_label = np.array([1])
 
 
 
-# Generate mask for scale
-scale_mask, scores, logits = predictor.predict(
-    point_coords=clicked_pt,
-    point_labels=in_label,
-    multimask_output=True,
-)
-areas = np.sum(scale_mask, axis=(0,2))
-indx = np.argmin(areas)
-scale_mask = scale_mask[indx]
-scale_mask = np.squeeze(scale_mask) # scale_mask.shape: (1,x,y) --> (x,y)
-# scale_mask is a bool np array with same shape as img an entry is True if that ppx is in the mask and False if it is not
-plt.figure()
-plt.imshow(scale)
-show_mask(scale_mask, plt.gca())
-show_points(clicked_pt, in_label, plt.gca())
-plt.axis('off')
-plt.show()
+# Get uploaded files from user
+scale = st.file_uploader('Upload Scale Image')
+image = st.file_uploader('Upload Particle Image')
 
 
 
-# Get pixels per millimeter
-ppx_per_mm = np.sum(scale_mask, axis=1)
-ppx_per_mm = ppx_per_mm[ppx_per_mm > 0]
-ppx_per_mm = np.mean(ppx_per_mm)
-print(f'Pixels per millimeter: {ppx_per_mm}')
+# Runs when scale image is uploaded
+if scale:
+    scale_np = np.asarray(bytearray(scale.read()), dtype=np.uint8)
+    scale_np = cv2.imdecode(scale_np, 1)
+    predictor.set_image(scale_np)
+    
+    scale_factor = scale_np.shape[1] / MAX_WIDTH # how many times larger scale_np is than the image shown for each dimension
+    clicked_point = streamlit_image_coordinates(Image.open(scale.name), height=scale_np.shape[0] // scale_factor, width=MAX_WIDTH)
+    if clicked_point:
+        input_point = np.array([[clicked_point['x'], clicked_point['y']]]) * scale_factor
+        input_point = input_point.astype(int)
+        input_label = np.array([1])
+        mask, scores, logits = predictor.predict(
+            point_coords=input_point,
+            point_labels=input_label,
+            multimask_output=True,
+        )
+        areas = np.sum(mask, axis=(1,2))
+        indx = np.argmin(areas)
+        mask = mask[indx]
+        mask = np.squeeze(mask) # mask.shape: (1,x,y) --> (x,y)
+        mask = mask.astype(int)
+        # mask is a bool np array with same shape as img an entry is True if that ppx is in the mask and False if it is not
+
+        fig, ax = plt.subplots()
+        ax.imshow(scale_np)
+        show_mask(mask, ax)
+        show_points(input_point, input_label, ax)
+        ax.axis('off')
+        st.pyplot(fig)
 
 
 
-# Get area in square milimeters
-for mask in img_masks:
-    area_ppx = mask.pop('area')
-    mask['area_ppx'] = area_ppx
-    mask['area_mm^2'] = area_ppx / ppx_per_mm ** 2
+        # Get pixels per millimeter
+        pixels_per_unit = np.sum(mask, axis=1)
+        pixels_per_unit = pixels_per_unit[pixels_per_unit > 0]
+        pixels_per_unit = np.mean(pixels_per_unit)
+        st.write(f'Scale: {pixels_per_unit} pixels / mm')
+
+
+
+# Runs when image is uploaded
+if image:
+    image_np = np.asarray(bytearray(image.read()), dtype=np.uint8)
+    image_np = cv2.imdecode(image_np, 1)
+    predictor.set_image(image_np)
+    
+    scale_factor = image_np.shape[1] / MAX_WIDTH # how many times larger scale_np is than the image shown for each dimension
+    clicked_point = streamlit_image_coordinates(Image.open(image.name), height=image_np.shape[0] // scale_factor, width=MAX_WIDTH)
+    if clicked_point:
+        input_point = np.array([[clicked_point['x'], clicked_point['y']]]) * scale_factor
+        input_point = input_point.astype(int)
+        input_label = np.array([1])
+        mask, scores, logits = predictor.predict(
+            point_coords=input_point,
+            point_labels=input_label,
+            multimask_output=True,
+        )
+        areas = np.sum(mask, axis=(1,2))
+        indx = np.argmin(areas)
+        mask = mask[indx]
+        mask = np.squeeze(mask) # mask.shape: (1,x,y) --> (x,y)
+        mask = mask.astype(int)
+        # mask is a bool np array with same shape as img an entry is True if that ppx is in the mask and False if it is not
+
+        fig, ax = plt.subplots()
+        ax.imshow(image_np)
+        show_mask(mask, ax)
+        show_points(input_point, input_label, ax)
+        ax.axis('off')
+        st.pyplot(fig)
+
+
+
+        # Get the area in square millimeters
+        st.write(f'Area: {np.sum(mask) / pixels_per_unit ** 2} mm^2')
