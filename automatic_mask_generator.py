@@ -106,7 +106,6 @@ if scale:
         pixels_per_unit = np.sum(mask, axis=1)
         pixels_per_unit = pixels_per_unit[pixels_per_unit > 0]
         pixels_per_unit = np.mean(pixels_per_unit)
-        st.write(f'Scale: {pixels_per_unit} pixels / mm')
 
 
 
