@@ -1,7 +1,7 @@
 numpy==1.24.2
 torch==1.13.1
 matplotlib==3.7.0
-opencv_python==4.7.0.72
+opencv_python-headless==4.7.0.72
 segment_anything==1.0
 streamlit_image_coordinates==0.1.3
 streamlit==1.22.0
