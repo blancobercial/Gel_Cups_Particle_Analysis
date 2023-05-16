@@ -1,11 +1,11 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-import cv2
-from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 from streamlit_image_coordinates import streamlit_image_coordinates
 import streamlit as st
 from PIL import Image
+from transformers import SamModel, SamProcessor
+import cv2
 
 
 
@@ -43,23 +43,42 @@ def show_points(coords, labels, ax, marker_size=20):
     pos_points = coords[labels==1]
     ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='.', s=marker_size, edgecolor='white', linewidth=0.2)
 
+def show_masks_on_image(raw_image, masks, scores):
+    if len(masks.shape) == 4:
+      masks = masks.squeeze()
+    if scores.shape[0] == 1:
+      scores = scores.squeeze()
+
+    nb_predictions = scores.shape[-1]
+    fig, ax = plt.subplots(1, nb_predictions)
+
+    for i, (mask, score) in enumerate(zip(masks, scores)):
+      mask = mask.cpu().detach()
+      ax[i].imshow(np.array(raw_image))
+      show_mask(mask, ax[i])
+      ax[i].title.set_text(f"Mask {i+1}, Score: {score.item():.3f}")
+      ax[i].axis("off")
+
+def show_points_on_image(raw_image, input_point, ax, input_labels=None):
+    ax.imshow(raw_image)
+    input_point = np.array(input_point)
+    if input_labels is None:
+      labels = np.ones_like(input_point[:, 0])
+    else:
+      labels = np.array(input_labels)
+    show_points(input_point, labels, ax)
+    ax.axis('on')
+
 
 
 
 # Get SAM
-sam_checkpoint = 'sam_vit_h_4b8939.pth'
-model_type = 'vit_h'
 if torch.cuda.is_available():
     device = 'cuda'
 else:
     device = 'cpu'
-sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
-sam.to(device=device)
-mask_generator = SamAutomaticMaskGenerator(
-    model=sam,
-    min_mask_region_area=200
-)
-predictor = SamPredictor(sam)
+model = SamModel.from_pretrained("facebook/sam-vit-huge").to(device)
+processor = SamProcessor.from_pretrained("facebook/sam-vit-huge")
 
 
 
@@ -73,39 +92,43 @@ image = st.file_uploader('Upload Particle Image')
 if scale:
     scale_np = np.asarray(bytearray(scale.read()), dtype=np.uint8)
     scale_np = cv2.imdecode(scale_np, 1)
-    predictor.set_image(scale_np)
+
+    #inputs = processor(raw_image, return_tensors="pt").to(device)
+    inputs = processor(scale_np, return_tensors="pt").to(device)
+    image_embeddings = model.get_image_embeddings(inputs["pixel_values"])
     
     scale_factor = scale_np.shape[1] / MAX_WIDTH # how many times larger scale_np is than the image shown for each dimension
     clicked_point = streamlit_image_coordinates(Image.open(scale.name), height=scale_np.shape[0] // scale_factor, width=MAX_WIDTH)
     if clicked_point:
-        input_point = np.array([[clicked_point['x'], clicked_point['y']]]) * scale_factor
-        input_point = input_point.astype(int)
+        input_point_np = np.array([[clicked_point['x'], clicked_point['y']]]) * scale_factor
+        input_point_list = [input_point_np.astype(int).tolist()]
+
+        #inputs = processor(raw_image, input_points=input_point, return_tensors="pt").to(device)
+        inputs = processor(scale_np, input_points=input_point_list, return_tensors="pt").to(device)
+        inputs.pop("pixel_values", None)
+        inputs.update({"image_embeddings": image_embeddings})
+        with torch.no_grad():
+            outputs = model(**inputs)
+        masks = processor.image_processor.post_process_masks(outputs.pred_masks.cpu(), inputs["original_sizes"].cpu(), inputs["reshaped_input_sizes"].cpu())
+        mask = torch.squeeze(masks[0])[0] # mask.shape: (1,x,y) --> (x,y)
+
+        mask = mask.to(torch.int)
         input_label = np.array([1])
-        mask, scores, logits = predictor.predict(
-            point_coords=input_point,
-            point_labels=input_label,
-            multimask_output=True,
-        )
-        areas = np.sum(mask, axis=(1,2))
-        indx = np.argmin(areas)
-        mask = mask[indx]
-        mask = np.squeeze(mask) # mask.shape: (1,x,y) --> (x,y)
-        mask = mask.astype(int)
-        # mask is a bool np array with same shape as img an entry is True if that ppx is in the mask and False if it is not
 
         fig, ax = plt.subplots()
         ax.imshow(scale_np)
         show_mask(mask, ax)
-        show_points(input_point, input_label, ax)
+        #show_points_on_image(scale_np, input_point, input_label, ax)
+        show_points(input_point_np, input_label, ax)
         ax.axis('off')
         st.pyplot(fig)
 
 
 
         # Get pixels per millimeter
-        pixels_per_unit = np.sum(mask, axis=1)
+        pixels_per_unit = torch.sum(mask, axis=1)
         pixels_per_unit = pixels_per_unit[pixels_per_unit > 0]
-        pixels_per_unit = np.mean(pixels_per_unit)
+        pixels_per_unit = torch.mean(pixels_per_unit, dtype=torch.float).item()
 
 
 
@@ -113,34 +136,38 @@ if scale:
 if image:
     image_np = np.asarray(bytearray(image.read()), dtype=np.uint8)
     image_np = cv2.imdecode(image_np, 1)
-    predictor.set_image(image_np)
+
+    #inputs = processor(raw_image, return_tensors="pt").to(device)
+    inputs = processor(image_np, return_tensors="pt").to(device)
+    image_embeddings = model.get_image_embeddings(inputs["pixel_values"])
     
     scale_factor = image_np.shape[1] / MAX_WIDTH # how many times larger scale_np is than the image shown for each dimension
     clicked_point = streamlit_image_coordinates(Image.open(image.name), height=image_np.shape[0] // scale_factor, width=MAX_WIDTH)
     if clicked_point:
-        input_point = np.array([[clicked_point['x'], clicked_point['y']]]) * scale_factor
-        input_point = input_point.astype(int)
+        input_point_np = np.array([[clicked_point['x'], clicked_point['y']]]) * scale_factor
+        input_point_list = [input_point_np.astype(int).tolist()]
+
+        #inputs = processor(raw_image, input_points=input_point, return_tensors="pt").to(device)
+        inputs = processor(image_np, input_points=input_point_list, return_tensors="pt").to(device)
+        inputs.pop("pixel_values", None)
+        inputs.update({"image_embeddings": image_embeddings})
+        with torch.no_grad():
+            outputs = model(**inputs)
+        masks = processor.image_processor.post_process_masks(outputs.pred_masks.cpu(), inputs["original_sizes"].cpu(), inputs["reshaped_input_sizes"].cpu())
+        mask = torch.squeeze(masks[0])[0] # mask.shape: (1,x,y) --> (x,y)
+
+        mask = mask.to(torch.int)
         input_label = np.array([1])
-        mask, scores, logits = predictor.predict(
-            point_coords=input_point,
-            point_labels=input_label,
-            multimask_output=True,
-        )
-        areas = np.sum(mask, axis=(1,2))
-        indx = np.argmin(areas)
-        mask = mask[indx]
-        mask = np.squeeze(mask) # mask.shape: (1,x,y) --> (x,y)
-        mask = mask.astype(int)
-        # mask is a bool np array with same shape as img an entry is True if that ppx is in the mask and False if it is not
 
         fig, ax = plt.subplots()
         ax.imshow(image_np)
         show_mask(mask, ax)
-        show_points(input_point, input_label, ax)
+        #show_points_on_image(scale_np, input_point, input_label, ax)
+        show_points(input_point_np, input_label, ax)
         ax.axis('off')
         st.pyplot(fig)
 
 
 
         # Get the area in square millimeters
-        st.write(f'Area: {np.sum(mask) / pixels_per_unit ** 2} mm^2')
+        st.write(f'Area: {torch.sum(mask, dtype=torch.float).item() / pixels_per_unit ** 2} mm^2')
