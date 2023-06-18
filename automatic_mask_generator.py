@@ -6,7 +6,16 @@ import streamlit as st
 from PIL import Image
 from transformers import SamModel, SamProcessor
 import cv2
+import os
 
+
+
+if os.path.exists('images'):
+    # Empty the images folder before starting
+    for path in os.listdir('images'):
+        os.remove(path)
+else:
+    os.mkdir('images')
 
 
 # Define global constants
@@ -15,21 +24,6 @@ MAX_WIDTH = 700
 
 
 # Define helpful functions
-def show_anns(anns):
-    if len(anns) == 0:
-        return
-    sorted_anns = sorted(anns, key=(lambda x: x['area']), reverse=True)
-    ax = plt.gca()
-    ax.set_autoscale_on(False)
-
-    img = np.ones((sorted_anns[0]['segmentation'].shape[0], sorted_anns[0]['segmentation'].shape[1], 4))
-    img[:,:,3] = 0
-    for ann in sorted_anns:
-        m = ann['segmentation']
-        color_mask = np.concatenate([np.random.random(3), [0.35]])
-        img[m] = color_mask
-    ax.imshow(img)
-
 def show_mask(mask, ax, random_color=False):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
@@ -43,22 +37,6 @@ def show_points(coords, labels, ax, marker_size=20):
     pos_points = coords[labels==1]
     ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='.', s=marker_size, edgecolor='white', linewidth=0.2)
 
-def show_masks_on_image(raw_image, masks, scores):
-    if len(masks.shape) == 4:
-      masks = masks.squeeze()
-    if scores.shape[0] == 1:
-      scores = scores.squeeze()
-
-    nb_predictions = scores.shape[-1]
-    fig, ax = plt.subplots(1, nb_predictions)
-
-    for i, (mask, score) in enumerate(zip(masks, scores)):
-      mask = mask.cpu().detach()
-      ax[i].imshow(np.array(raw_image))
-      show_mask(mask, ax[i])
-      ax[i].title.set_text(f"Mask {i+1}, Score: {score.item():.3f}")
-      ax[i].axis("off")
-
 def show_points_on_image(raw_image, input_point, ax, input_labels=None):
     ax.imshow(raw_image)
     input_point = np.array(input_point)
@@ -68,7 +46,6 @@ def show_points_on_image(raw_image, input_point, ax, input_labels=None):
       labels = np.array(input_labels)
     show_points(input_point, labels, ax)
     ax.axis('on')
-
 
 
 
@@ -93,12 +70,22 @@ if scale:
     scale_np = np.asarray(bytearray(scale.read()), dtype=np.uint8)
     scale_np = cv2.imdecode(scale_np, 1)
 
+    # Save image if it isn't already saved
+    if not os.path.exists(os.path.join("images/", scale.name)):
+        with open(os.path.join("images/", scale.name), "wb") as f:
+            f.write(scale.getbuffer())
+    scale_pil = Image.open(os.path.join("images/", scale.name))
+
+    # Remove file when done
+    os.remove(os.path.join("images/", scale.name))
+
     #inputs = processor(raw_image, return_tensors="pt").to(device)
     inputs = processor(scale_np, return_tensors="pt").to(device)
     image_embeddings = model.get_image_embeddings(inputs["pixel_values"])
     
     scale_factor = scale_np.shape[1] / MAX_WIDTH # how many times larger scale_np is than the image shown for each dimension
-    clicked_point = streamlit_image_coordinates(Image.open(scale.name), height=scale_np.shape[0] // scale_factor, width=MAX_WIDTH)
+    #clicked_point = streamlit_image_coordinates(Image.open(scale.name), height=scale_np.shape[0] // scale_factor, width=MAX_WIDTH)
+    clicked_point = streamlit_image_coordinates(scale_pil, height=scale_np.shape[0] // scale_factor, width=MAX_WIDTH)
     if clicked_point:
         input_point_np = np.array([[clicked_point['x'], clicked_point['y']]]) * scale_factor
         input_point_list = [input_point_np.astype(int).tolist()]
@@ -137,12 +124,21 @@ if image:
     image_np = np.asarray(bytearray(image.read()), dtype=np.uint8)
     image_np = cv2.imdecode(image_np, 1)
 
+    # Save image if it isn't already saved
+    if not os.path.exists(os.path.join("images/", image.name)):
+        with open(os.path.join("images/", image.name), "wb") as f:
+            f.write(image.getbuffer())
+    image_pil = Image.open(os.path.join("images/", image.name))
+
+    # Remove file when done
+    os.remove(os.path.join("images/", image.name))
+
     #inputs = processor(raw_image, return_tensors="pt").to(device)
     inputs = processor(image_np, return_tensors="pt").to(device)
     image_embeddings = model.get_image_embeddings(inputs["pixel_values"])
     
     scale_factor = image_np.shape[1] / MAX_WIDTH # how many times larger scale_np is than the image shown for each dimension
-    clicked_point = streamlit_image_coordinates(Image.open(image.name), height=image_np.shape[0] // scale_factor, width=MAX_WIDTH)
+    clicked_point = streamlit_image_coordinates(image_pil, height=image_np.shape[0] // scale_factor, width=MAX_WIDTH)
     if clicked_point:
         input_point_np = np.array([[clicked_point['x'], clicked_point['y']]]) * scale_factor
         input_point_list = [input_point_np.astype(int).tolist()]
