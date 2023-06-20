@@ -18,7 +18,15 @@ If those names don't match, this will still work, as long as those names are als
 
 To run the program perform the following steps in this order:
 
-1) Run the command:
+1) Git this clone repo
+
+2) Run the command:
+
+pip install -r requirements.txt
+
+in the terminal
+
+3) Run the command:
 
 streamlit run automatic_mask_generator.py
 
