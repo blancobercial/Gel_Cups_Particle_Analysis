@@ -14,11 +14,15 @@ field 1.tiff --> Nov21_150B_L1_F1.tiff
 
 If those names don't match, this will still work, as long as those names are also changed in the code as needed
 
-### INSTRUCTIONS FOR RUNNING PROGRAM: ###
+# INSTRUCTIONS FOR RUNNING PROGRAM:
 
 To run the program perform the following steps in this order:
 
-1) Git this clone repo
+1) Run the command:
+
+git clone https://github.com/rahulrao011/particle_image_analysis_wcph_lab.git
+
+in the terminal
 
 2) Run the command:
 
@@ -32,7 +36,7 @@ streamlit run automatic_mask_generator.py
 
 in the terminal
 
-2) Go to:
+4) Go to:
 
 https://localhost:8501
 
