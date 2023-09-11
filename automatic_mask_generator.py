@@ -7,16 +7,12 @@ from PIL import Image
 from transformers import SamModel, SamProcessor
 import cv2
 import os
+import shutil
 
 
-
-if os.path.exists('images'):
-    # Empty the images folder before starting
-    for path in os.listdir('images'):
-        os.remove(path)
-else:
-    os.mkdir('images')
-
+# Delete directory if it exsits and create a new one
+shutil.rmtree('images', ignore_errors=True)
+os.mkdir('images')
 
 # Define global constants
 MAX_WIDTH = 700
@@ -76,9 +72,6 @@ if scale:
             f.write(scale.getbuffer())
     scale_pil = Image.open(os.path.join("images/", scale.name))
 
-    # Remove file when done
-    os.remove(os.path.join("images/", scale.name))
-
     #inputs = processor(raw_image, return_tensors="pt").to(device)
     inputs = processor(scale_np, return_tensors="pt").to(device)
     image_embeddings = model.get_image_embeddings(inputs["pixel_values"])
@@ -110,12 +103,14 @@ if scale:
         ax.axis('off')
         st.pyplot(fig)
 
-
-
         # Get pixels per millimeter
         pixels_per_unit = torch.sum(mask, axis=1)
         pixels_per_unit = pixels_per_unit[pixels_per_unit > 0]
         pixels_per_unit = torch.mean(pixels_per_unit, dtype=torch.float).item()
+
+    # Remove file when done
+    scale_pil.close()
+    os.remove(os.path.join("images/", scale.name))
 
 
 
@@ -129,9 +124,6 @@ if image:
         with open(os.path.join("images/", image.name), "wb") as f:
             f.write(image.getbuffer())
     image_pil = Image.open(os.path.join("images/", image.name))
-
-    # Remove file when done
-    os.remove(os.path.join("images/", image.name))
 
     #inputs = processor(raw_image, return_tensors="pt").to(device)
     inputs = processor(image_np, return_tensors="pt").to(device)
@@ -167,3 +159,9 @@ if image:
 
         # Get the area in square millimeters
         st.write(f'Area: {torch.sum(mask, dtype=torch.float).item() / pixels_per_unit ** 2} mm^2')
+
+
+    
+    # Remove file when done
+    image_pil.close()
+    os.remove(os.path.join("images/", image.name))
