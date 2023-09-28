@@ -158,7 +158,7 @@ if image:
 
 
         # Get the area in square millimeters
-        st.write(f'Area: {torch.sum(mask, dtype=torch.float).item() / pixels_per_unit ** 2} mm^2')
+        st.write(f'Area: {torch.sum(mask, dtype=torch.float).item() / pixels_per_unit ** 2} μm^2')
 
 
     
