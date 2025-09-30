@@ -1,4 +1,6 @@
-# particle_image_analysis_wcph_lab
+
+
+# Analytical pipele for particle analysis
 
 Use the official GitHub as a reference: https://github.com/facebookresearch/segment-anything
 
