@@ -2,6 +2,7 @@
 
 # Analytical pipele for particle analysis
 
+Developed by Rahul Rao<rsrao@wisc.edu>
 Use the official GitHub as a reference: https://github.com/facebookresearch/segment-anything
 
 # Instructions for running the program:
