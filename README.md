@@ -4,7 +4,7 @@
 
 Use the official GitHub as a reference: https://github.com/facebookresearch/segment-anything
 
-# INSTRUCTIONS FOR RUNNING PROGRAM:
+# Instructions for running the program:
 
 To run the program perform the following steps in this order:
 
