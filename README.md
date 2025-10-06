@@ -2,6 +2,8 @@
 
 # Analytical pipele for particle analysis
 
+As used in Brenner et al. "Particle transformations and POC export at BATS" (in preparation).
+
 Developed by [Rahul Rao](https://github.com/rahulrao011/), <rsrao@wisc.edu>.
 
 Use the official GitHub as a reference: https://github.com/facebookresearch/segment-anything
